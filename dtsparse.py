@@ -14,24 +14,19 @@ gpio_num_max = 150
 class Node():
     def __init__(self):
         self.__attributeslist = [] #reg = <0x2>; saved as ['reg', '<0x2>']
-        self.__attributesmap = {} #reg = <0x2>; saved as {'reg':'<0x2>'}
-        self.__name = ''
+        self.__attributesmap = None #reg = <0x2>; saved as {'reg':'<0x2>'}
+        self.__name = None
         self.__subnodes = []
     def addstatement(self, statement):
         """
             statement is stripped and without ';' character
         """
-        if not statement:
-            return
-        with_equal_char = 1
-        try:
-            i = statement.index('=')
-        except:
-            with_equal_char = 0
-        if with_equal_char:
-            self.__attributeslist.append([statement[0:i].strip(), statement[i+1:].strip()])
-        else:
-            self.__attributeslist.append([statement.strip(),''])
+        if statement:
+           try:
+                i = statement.index('=')
+                self.__attributeslist.append([statement[0:i].strip(), statement[i+1:].strip()])
+           except:
+                self.__attributeslist.append([statement.strip(),''])
     @property
     def name(self):
         if not self.__name:
@@ -57,11 +52,11 @@ class Node():
     def dump(self, deepth = 0):
         indent_string = '\t'* deepth
         print(indent_string, self.name, ' {', sep='')
-        for item in self.__attributeslist:
-            if item[1]:
-                print(indent_string, '\t', item[0], ' = ', item[1], ';', sep='')
+        for attribute, value in self.__attributeslist:
+            if value:
+                print(indent_string, '\t', attribute, ' = ', value, ';', sep='')
             else:
-                print(indent_string, '\t', item[0], ';', sep='')
+                print(indent_string, '\t', attribute, ';', sep='')
         for node in self.__subnodes:
             print()
             node.dump(deepth+1)
@@ -84,11 +79,7 @@ class DtsInfo():
                 return node
         return None
     def find_node_by_patternname(self, pattern):
-        for subnode in self.__rootnode.subnodes:
-            node  = self.__find_subnode_by_patternname_recursive(subnode, pattern)
-            if node:
-                return node
-        return None
+            return self.__find_subnode_by_patternname_recursive(self.__rootnode, pattern)
     def get_pinctrl_phandle(self):
         """
             phandle = <ox23>; return '0x23'
@@ -103,8 +94,7 @@ class DtsInfo():
             Return: [(nodename, attribute, gpio), ...]
         """
         ret = []
-        if 'status' in node.attributes.keys():
-            if node.attributes['status'] == 'disabled':
+        if 'status' in node.attributes.keys() and node.attributes['status'] == 'disabled':
                 return ret
         pattern_string = re.compile('<( *' + self.__pinctrl_phandle +  ' 0x[0-9a-fA-F]+ 0x[0-9a-fA-F]+\s*)+>')
         for attri in node.attributes:
@@ -120,7 +110,7 @@ class DtsInfo():
         """
             {1: [(name1, attribute1), (name2, attribute2)], 2:[ ... ]}
         """
-        ret = {}
+        ret = dict()
         node_attribute_gpio_used = self.__get_node_attribute_gpio_use_recursive(self.__rootnode)
         for nodename, nodeattri, gpio in node_attribute_gpio_used:
             if gpio not in ret.keys():
@@ -128,8 +118,7 @@ class DtsInfo():
             ret[gpio].append((nodename, nodeattri))
         return ret
     def __find_node_by_phandle_recursive(self, node, phandle):
-        if 'phandle' in node.attributes.keys():
-            if re.search(re.compile('0x[0-9a-fA-F]+'), node.attributes['phandle']).group(0) == phandle:
+        if 'phandle' in node.attributes.keys() and re.search(re.compile('0x[0-9a-fA-F]+'), node.attributes['phandle']).group(0) == phandle:
                 return node
         for subnode in node.subnodes:
             ret = self.__find_node_by_phandle_recursive(subnode, phandle)
@@ -147,9 +136,8 @@ class DtsInfo():
         """
         if not isinstance(node, Node):
             raise TypeError('node must be instance of Node')
-        ret = {}
-        if 'status' in node.attributes.keys():
-            if node.attributes['status'] == 'disabled':
+        ret = dict()
+        if 'status' in node.attributes.keys() and node.attributes['status'] == 'disabled':
                 return ret
         for key in node.attributes:
             if re.match(re.compile('^pinctrl-[0-9a-fA-F]+'), key):
@@ -187,7 +175,7 @@ class DtsInfo():
                     for gpio in gpios:
                         node_pinctrlname_gpio.append((name, node.name, int(gpio)))
         #set return format
-        ret = {}
+        ret = dict()
         for nodename, pinctrlname, gpio in node_pinctrlname_gpio:
             if gpio in ret.keys():
                 ret[gpio].append((nodename, pinctrlname))
