@@ -372,6 +372,9 @@ if __name__ == "__main__":
         parser.add_argument("-f", metavar='compiled dtsfile', nargs=1, type=str, required=False, help = "Set dts file, which is processed by dtc command")
         command = parser.parse_args()
         dtc_command, dtbs = search_dtc_dtbs()
+        if not dtbs:
+                print('No compiled dtb file found, please compile bootimg first')
+                exit()
 
         global RootNode
         if command.f:
