@@ -10,7 +10,7 @@ import os
 import string
 import tempfile
 import sys
-
+import fnmatch
 
 class Node():
         def __init__(self):
@@ -173,7 +173,7 @@ class DtsInfo():
                                 pinctrl-1 = <0xfa>;
                                 pinctrl-2 = <0xfb>;
                                 
-                                Return: {node:{0xf9, 0xfa, 0xfb}}
+                                Return: {node:{'0xf9', '0xfa', '0xfb'}}
                 """
                 if not isinstance(node, Node):
                         raise TypeError('node must be instance of Node')
@@ -212,6 +212,8 @@ class DtsInfo():
                 for node in pinctrl_used:
                         for handle in pinctrl_used[node]:
                                 pinctrl_node = self.__find_node_by_phandle_recursive(self.__rootnode, handle)
+                                if not pinctrl_node:
+                                        continue
                                 #get gpio
                                 statements = self.__find_statement_by_pattern_recursive(pinctrl_node, re.compile('pins.*=([\s",]*gpio\d+[\s",]*)+'))
                                 for statement in statements:
@@ -241,7 +243,7 @@ class DtsInfo():
                                                         ret[gpio] = set()
                                                 ret[gpio].add(node.name)
                 return ret                
-        def dump_gpio_usage(self, gpio = None):
+        def dump_gpio_usage(self, gpio = None, out_fd = sys.stdout):
                 """
                         GPIO: 125
                         node:
@@ -252,25 +254,25 @@ class DtsInfo():
                 gpioused = self.gpio_nodename_attribute_used()
                 pinctrlconfig = self.gpio_nodename_pinctrlname_used()
                 interruptgpio_nodename = self.interruptgpio_nodename_used()
-                gpio_num_max = max(max(gpioused.keys()), max(pinctrlconfig.keys()))
+                gpio_num_max = max(max(gpioused.keys()), max(pinctrlconfig.keys()), max(interruptgpio_nodename.keys()))
                 if gpio:
                         gpiolist = [gpio]
                 else:
                         gpiolist = range(0,gpio_num_max+1)
                 for gpionum in gpiolist:
-                        print('GPIO:', gpionum)
+                        print('GPIO:', gpionum, file = out_fd)
                         if gpionum in gpioused.keys():
-                                print('node:')
+                                print('node:', file = out_fd)
                                 for name, attribute in gpioused[gpionum]:
-                                        print('\t', name, '->', attribute)
+                                        print('\t', name, '->', attribute, file = out_fd)
                         if gpionum in interruptgpio_nodename.keys():
-                                print('interrupt')
+                                print('interrupt', file = out_fd)
                                 for name in interruptgpio_nodename[gpionum]:
-                                        print('\t', name, '->', 'interrupts')
+                                        print('\t', name, '->', 'interrupts', file = out_fd)
                         if gpionum in pinctrlconfig.keys():
-                                print('pinctrl:')
+                                print('pinctrl:', file = out_fd)
                                 for name, pinctrlname in pinctrlconfig[gpionum]:
-                                        print('\t', name, '->', pinctrlname)
+                                        print('\t', name, '->', pinctrlname, file = out_fd)
 
 def node_parser(fd, node_name = None):
         """
@@ -321,69 +323,68 @@ def dts_parser(filename = None, fd = None):
         fd.close()
         return root
 
-def search_file(file_name, search_path):
+def search_dtc_dtbs():
         """
         This script is excuted in android root directory, so check the path is valid
         """
         rootdir_contents=os.listdir()
         dirs_check={'kernel', 'device', 'vendor', 'cts', 'external', 'framworks'}
-        if len(set(rootdir_contents).intersection(dir_check)) == len(dir_check):
-                if 'out' in rootdir_contents:
-                        product_target = os.listdir('out/target/product/')
-                        if product_target:
-                                dtc_command = './out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/script/dtc/dtc'
-                                dtb_file='kkkk'
-                else:
-                        print('There is no out directory, please compile bootimg first')
-                        exit()
-        else:
+        if not len(set(rootdir_contents).intersection(dirs_check)) == len(dirs_check):
                 print(os.getcwd(), 'is not android root directory')
                 print(sys.argv[0], 'must be excuted in android root directory')
                 exit()
-        
+        if not 'out' in rootdir_contents:
+                print('There is no out directory, please compile bootimg first')
+                exit()
+        product_target = os.listdir('out/target/product/')
+        if product_target:
+                dtc_command = './out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/script/dtc/dtc'
+                dtb_file_paths = ['./out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/arch/arm/boot/dts/qcom/', './out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/arch/arm64/boot/dts/qcom/']
+                dtbs = []
+                for path in dtb_file_paths:
+                        if os.path.isdir(path):
+                                for file in os.listdir(path):
+                                        if fnmatch.fnmatch(file, '*.dtb'):
+                                                dtbs.append(''.join([path,file]))
+        return (dtc_command, dtbs)
+
+def dtsinfo_generator(dtc_command_path, dtb_file_path):
+        dtc_command_path = os.path.abspath(dtc_command_path)
+        dtb_file_path = os.path.abspath(dtb_file_path)
+        if not re.fullmatch(re.compile('.*dtc'), dtc_command_path):
+                raise ValueError('dtc comamnd path error')
+        elif not os.path.isfile(dtc_command_path):
+                raise ValueError(dtc_command_path, 'file not exist or not a regular file')
+        if not re.fullmatch(re.compile('.*dtb'), dtb_file_path):
+                raise ValueError('dtb file path error')
+        elif not os.path.isfile(dtb_file_path):
+                raise ValueError(command.c[0], 'file not exist or not a regular file')
+        global RootNode
+        with os.popen(dtc_command_path + ' -I dtb -O dts ' + dtb_file_path + ' 2>/dev/null') as fd:
+                tmpfile = tempfile.TemporaryFile(mode='w+')
+                tmpfile.write(fd.read())
+                tmpfile.seek(0)
+                RootNode = dts_parser(fd = tmpfile)
+        dtsinfo = DtsInfo(RootNode)
+
 if __name__ == "__main__":
         parser = ArgumentParser(description = "Parse gpio configuration in compiled dtb file")
         parser.add_argument("-f", metavar='compiled dtsfile', nargs=1, type=str, required=False, help = "Set dts file, which is processed by dtc command")
-        parser.add_argument("-n", metavar='gpio number', nargs=1, type=int, required=False, help = "Check specific gpio")
-        parser.add_argument("-b", metavar='compiled dtb file', nargs=1, type=str, required=False, help = "Set compiled dtb file")
-        parser.add_argument("-c", metavar='dtc command', nargs=1, type=str, required=False, help = "Set dtc command path")
         command = parser.parse_args()
+        dtc_command, dtbs = search_dtc_dtbs()
 
-        #out\target\product\sdm660_64\obj\KERNEL_OBJ
         global RootNode
         if command.f:
                 RootNode = dts_parser(filename = command.f[0])
-        elif command.b and command.c:
-                if not re.fullmatch(re.compile('.*dtc'), command.c[0]):
-                        raise ValueError('dtc comamnd path error')
-                elif not os.path.isfile(command.c[0]):
-                        raise ValueError(command.c[0], 'file not exist or not a regular file')
-                if not re.fullmatch(re.compile('.*dtb'), command.b[0]):
-                        raise ValueError('dtb file path error')
-                elif not os.path.isfile(command.b[0]):
-                        raise ValueError(command.c[0], 'file not exist or not a regular file')
-
-                with os.popen(os.path.join('./', command.c[0]) + ' -I dtb -O dts ' + os.path.join('./', command.b[0]) + ' 2>/dev/null') as fd:
-                        tmpfile = tempfile.TemporaryFile(mode='w+')
-                        tmpfile.write(fd.read())
-                        tmpfile.seek(0)
-                        RootNode = dts_parser(fd = tmpfile)
-        else:
-                parser.print_help()
-                exit()
-
-        #RootNode.dump()
-        dtsinfo = DtsInfo(RootNode)
-        
-        #print('find_node_by_patternname()')
-        #print(dtsinfo.find_node_by_patternname(re.compile('pinctrl@[x0-9a-fA-F]+')))
-        
-        #print('get_pinctrl_phandle')
-        #print(dtsinfo.get_pinctrl_phandle())
-        
-        #print('find_node_statement_by_statementpattern')
-        #print(dtsinfo.find_node_statement_by_statementpattern(re.compile('interrupts =.*')))
-        #exit()
-
-        #print(dtsinfo.interruptgpio_nodename_used())
-        dtsinfo.dump_gpio_usage()
+                dtsinfo = DtsInfo(RootNode)
+                dtsinfo.dump_gpio_usage()
+                exit
+        for dtb_file in dtbs:
+                print('parsing ', dtb_file, '......')
+                dtsinfo = dtsinfo_generator(dtc_command, dtb_file)
+                basename = os.path.basename(dtb_file)
+                result_file = re.sub(re.compile('\.dtb'), '_gpio_use.txt', dtb_file)
+                with open(result_file, 'w') as fd:
+                        dtsinfo.dump_gpio_usage(out_fd = fd)
+                print('saved result to ', result_file)
+                print()
