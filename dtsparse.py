@@ -18,7 +18,7 @@ import fnmatch
 class Node():
     def __init__(self):
         self.__attributeslist = []  # reg = <0x2>; saved as ['reg', '<0x2>']
-        self.__attributesmap = None  # reg = <0x2>; saved as {'reg':'<0x2>'}
+        self.__attributesmap = None  # reg = <0x2>; saved as {'reg': '<0x2>'}
         self.__name = None
         self.__subnodes = []
 
@@ -76,8 +76,7 @@ class Node():
         print(indent_string, '};', sep='')
 
     def isDisabled(self):
-        if 'status' in self.attributes.keys() and \
-        self.attributes['status'] == '"disabled"':
+        if 'status' in self.attributes.keys() and self.attributes['status'] == '"disabled"':
             return True
         return False
 
@@ -101,15 +100,13 @@ class DtsInfo():
         if re.fullmatch(pattern, node.name):
             ret.append(node)
         for subnode in node.subnodes:
-            nodes = self.__find_subnode_by_patternname_recursive(subnode,
-            pattern)
+            nodes = self.__find_subnode_by_patternname_recursive(subnode, pattern)
             if nodes:
                 ret.extend(nodes)
         return ret
 
     def find_node_by_patternname(self, pattern):
-            return self.__find_subnode_by_patternname_recursive(self.__rootnode, pattern
-                )
+            return self.__find_subnode_by_patternname_recursive(self.__rootnode, pattern)
 
     def get_pinctrl_phandle(self):
         """
@@ -371,7 +368,8 @@ def search_dtc_dtbs():
     product_target = os.listdir('out/target/product/')
     if product_target:
         dtc_command = './out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/script/dtc/dtc'
-        dtb_file_paths = ['./out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/arch/arm/boot/dts/qcom/', './out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/arch/arm64/boot/dts/qcom/']
+        dtb_file_paths = ['./out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/arch/arm/boot/dts/qcom/',
+                            './out/target/product/' + product_target[0] + '/obj/KERNEL_OBJ/arch/arm64/boot/dts/qcom/']
         dtbs = []
         for path in dtb_file_paths:
             if os.path.isdir(path):
