@@ -4,12 +4,12 @@
 # dtb file is processed by dtc command, Such as
 #    ./out/target/product/msm8937_64/obj/KERNEL_OBJ/scripts/dtc/dtc -I dtb -O dts
 #    ./out/target/product/msm8937_64/obj/KERNEL_OBJ/arch/arm64/boot/dts/qcom/zte-msm8940-pmi8940-vita.dtb
+#
 # Version: 1.1
 
 from argparse import ArgumentParser
 import re
 import os
-import string
 import tempfile
 import sys
 import fnmatch
@@ -21,17 +21,20 @@ class Node():
         self.__attributesmap = None  # reg = <0x2>; saved as {'reg': '<0x2>'}
         self.__name = None
         self.__subnodes = []
+        self.__attributeschanged = 1
 
     def addstatement(self, statement):
         """
-            statement is stripped and without ';' character
+            property and value is stripped, property and value doesn't reserve end ';' character,
         """
+        statement = re.sub(re.compile('\s*;\s*\n*$'), '', statement)
         if statement:
             try:
                 i = statement.index('=')
-                self.__attributeslist.append([statement[0:i].strip(), statement[i + 1:].strip()])
+                self.__attributeslist.append([statement[0:i].strip(), statement[i+1:].strip()])
             except:
                 self.__attributeslist.append([statement.strip(), ''])
+        self.__attributeschanged = 1
 
     @property
     def name(self):
@@ -41,8 +44,13 @@ class Node():
 
     @name.setter
     def name(self, value):
+        """
+            value must be str, must be set and only set once
+        """
         if not isinstance(value, str):
             raise ValueError('value must be str type')
+        if self.__name:
+            raise ValueError('Node name has been set')
         self.__name = value
 
     def addsubnode(self, node):
@@ -56,24 +64,31 @@ class Node():
 
     @property
     def attributes(self):
-        if not self.__attributesmap:
+        if self.__attributeschanged:
             self.__attributesmap = dict(self.__attributeslist)
         return self.__attributesmap
 
-    def dump(self, deepth=0):
-        if self.isDisabled():
-            return
+    def dump(self, deepth=0, withdisabled = False):
+        """
+            dump disabled node if withdisabled = True, else doesn't dump disabled node
+        """
+        if not self.__name:
+            raise ValueError('Node name is not set')
+        result = []
+        if not withdisabled and self.isDisabled():
+            return ''.join(result)
         indent_string = '\t' * deepth
-        print(indent_string, self.name, ' {', sep='')
+        result.append(''.join([indent_string, self.name, ' {\n']))
         for attribute, value in self.__attributeslist:
             if value:
-                print(indent_string, '\t', attribute, ' = ', value, ';', sep='')
+                result.append(''.join([indent_string, '\t', attribute, ' = ', value, ';\n']))
             else:
-                print(indent_string, '\t', attribute, ';', sep='')
+                result.append(''.join([indent_string, '\t', attribute, ';\n']))
         for node in self.__subnodes:
-            print()
-            node.dump(deepth + 1)
-        print(indent_string, '};', sep='')
+            result.append('\n')
+            result.append(node.dump(deepth + 1, withdisabled=withdisabled))
+        result.append(''.join([indent_string, '};\n']))
+        return ''.join(result)
 
     def isDisabled(self):
         if 'status' in self.attributes.keys() and self.attributes['status'] == '"disabled"':
@@ -336,10 +351,12 @@ def node_parser(fd, node_name=None):
 
 
 def dts_parser(filename=None, fd=None):
+    if filename and fd:
+        raise ValueError('Both filename and fd have value, it is error.')
     if filename:
         fd = open(filename, 'r')
     elif not fd:
-        raise ValueError('either filenmae or fd has value')
+        raise ValueError('Neither filenmae nor fd has value')
     line = fd.readline()
     while line:
         if re.fullmatch('\s*\S+\s+{\s*\n', line):  # parse / node
@@ -348,7 +365,8 @@ def dts_parser(filename=None, fd=None):
             root = node_parser(fd, name)
             break
         line = fd.readline()
-    fd.close()
+    if filename:
+        fd.close()
     return root
 
 
