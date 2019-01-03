@@ -4,7 +4,6 @@ import unittest
 import fnmatch
 import os
 import dtsparser
-from builtins import isinstance
 import re
 
 class NodeTest(unittest.TestCase):
@@ -145,48 +144,19 @@ class DtsInfoTest(unittest.TestCase):
     pass
 
 
-class DtsParserTest(unittest.TestCase):
+class DtsTest(unittest.TestCase):
     def setUp(self):
         self.__dtsfiles = []
         for file in os.listdir('.'):
             if fnmatch.fnmatch(file, '*.dts'):
                 self.__dtsfiles.append(file)
-    def test_dts_parser(self):
+    def test_dump(self):
         for file in self.__dtsfiles:
-            fd = open(file, 'r')
-            
-            with self.assertRaises(ValueError):
-                dtsparser.dts_parser(None, None)
-            with self.assertRaises(ValueError):
-                dtsparser.dts_parser(file, fd)
-            
-            node_by_filename = dtsparser.dts_parser(file, None)
-            node_by_fd = dtsparser.dts_parser(None, fd)
-            contents_by_filename = node_by_filename.dump()
-            contents_by_fd = node_by_fd.dump()
-            
-            self.assertTrue(isinstance(contents_by_filename, str))
-            self.assertTrue(isinstance(contents_by_fd, str))
-            self.assertGreater(len(contents_by_filename), 0)
-            self.assertGreater(len(contents_by_fd), 0)
-            self.assertEqual(contents_by_filename, contents_by_fd)
-            self.assertFalse(fd.closed)
-            fd.close()
-
-            contents_by_filename_with_disabled = node_by_filename.dump(withdisabled=True)
-            contents_by_fd_with_disabled = node_by_fd.dump(withdisabled=True)
-            
-            self.assertTrue(isinstance(contents_by_filename_with_disabled, str))
-            self.assertTrue(isinstance(contents_by_fd_with_disabled, str))
-            self.assertNotEqual(contents_by_filename_with_disabled, contents_by_filename)
-            self.assertGreater(len(contents_by_filename), 0)
-            self.assertGreater(len(contents_by_fd), 0)
-            self.assertEqual(contents_by_fd_with_disabled, contents_by_fd_with_disabled)
-            
-            resultfile = re.sub(re.compile('\.dts$'), '.txt', file)
-            with open(resultfile, 'r') as fd:
-                resultfilecontents = fd.read()
-            self.assertEqual(contents_by_filename_with_disabled, resultfilecontents)
+            dts = dtsparser.Dts(file)
+            with open(file, 'r') as fd:
+                filecontents = fd.read()
+            filecontents_header =  filecontents[:re.search(re.compile('/ {'), filecontents).span()[0]]
+            self.assertEqual(filecontents, filecontents_header+dts.dump())
         
 
 if __name__ == '__main__':

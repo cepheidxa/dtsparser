@@ -96,6 +96,60 @@ class Node():
         return False
 
 
+class Dts():
+    def __init__(self, filename):
+        self.__root = self.__dts_parser(filename)
+    def __node_parser(self, fd, node_name=None):
+        """
+        Parse node infomation, without nodename and starting '{' but with ending '};'
+    
+        nodenmae {
+        ----------------------------------
+            attribute1;
+            subnode {
+            };
+            subnode {
+            };
+        };
+        -----------------------------------
+    
+        Return node
+        """
+        node = Node()
+        if node_name:
+            node.name = node_name
+        line = fd.readline()
+        while line:
+            if re.fullmatch('\s*\S+\s+{\s*\n', line):  # parse sub node
+                #get node name
+                name = re.search(re.compile('\S+'), line).group(0)
+                subnode = self.__node_parser(fd, name)
+                node.addsubnode(subnode)
+            elif re.fullmatch('\s*};\s*\n', line):  # end sub node:
+                break
+            elif re.sub(re.compile('\s*\n'), '', line):  # statement
+                statement = re.sub(re.compile('\s*;\s*\n'), '', line)
+                node.addstatement(statement.strip())
+            line = fd.readline()
+        return node
+
+    def __dts_parser(self, filename):
+        fd = open(filename, 'r')
+        line = fd.readline()
+        while line:
+            if re.fullmatch('\s*\S+\s+{\s*\n', line):  # parse / node
+                #get node name
+                name = re.search(re.compile('\S+'), line).group(0)
+                root = self.__node_parser(fd, name)
+                break
+            line = fd.readline()
+        if filename:
+            fd.close()
+        return root
+
+    def dump(self):
+        return self.__root.dump(withdisabled=True)
+
 class DtsInfo():
     def __init__(self, rootnode):
         if not isinstance(rootnode, Node):
@@ -313,61 +367,6 @@ class DtsInfo():
                 print('pinctrl:', file=out_fd)
                 for name, pinctrlname in pinctrlconfig[gpionum]:
                     print('\t', name, '->', pinctrlname, file=out_fd)
-
-
-def node_parser(fd, node_name=None):
-    """
-    Parse node infomation, without nodename and starting '{' and with ending '};'
-
-    nodenmae {
-    ----------------------------------
-        attribute1;
-        subnode {
-        };
-        subnode {
-        };
-    };
-    -----------------------------------
-
-    Return node
-    """
-    node = Node()
-    if node_name:
-        node.name = node_name
-    line = fd.readline()
-    while line:
-        if re.fullmatch('\s*\S+\s+{\s*\n', line):  # parse sub node
-            #get node name
-            name = re.search(re.compile('\S+'), line).group(0)
-            subnode = node_parser(fd, name)
-            node.addsubnode(subnode)
-        elif re.fullmatch('\s*};\s*\n', line):  # end sub node:
-            break
-        elif re.sub(re.compile('\s*\n'), '', line):  # statement
-            statement = re.sub(re.compile('\s*;\s*\n'), '', line)
-            node.addstatement(statement.strip())
-        line = fd.readline()
-    return node
-
-
-def dts_parser(filename=None, fd=None):
-    if filename and fd:
-        raise ValueError('Both filename and fd have value, it is error.')
-    if filename:
-        fd = open(filename, 'r')
-    elif not fd:
-        raise ValueError('Neither filenmae nor fd has value')
-    line = fd.readline()
-    while line:
-        if re.fullmatch('\s*\S+\s+{\s*\n', line):  # parse / node
-            #get node name
-            name = re.search(re.compile('\S+'), line).group(0)
-            root = node_parser(fd, name)
-            break
-        line = fd.readline()
-    if filename:
-        fd.close()
-    return root
 
 
 def search_dtc_dtbs():
