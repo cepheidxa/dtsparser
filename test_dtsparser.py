@@ -7,6 +7,7 @@ import dtsparser
 import re
 import cProfile
 
+
 class NodeTest(unittest.TestCase):
     def test_name(self):
         node = dtsparser.Node()
@@ -46,7 +47,7 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(node2.parent, root)
         self.assertEqual(node3.parent, root)
         self.assertEqual(root.parent, None)
-        
+
         with self.assertRaises(ValueError):
             node1.parent = root
         node = dtsparser.Node()
@@ -61,31 +62,31 @@ class NodeTest(unittest.TestCase):
     def test_addstatement(self):
         node = dtsparser.Node()
         node.addstatement('compatible = "shared-dma-pool";')
-        self.assertEqual(len(node.attributes), 1)
+        self.assertEqual(len(node.props), 1)
         node.addstatement('reusable;')
-        self.assertEqual(len(node.attributes), 2)
+        self.assertEqual(len(node.props), 2)
         node.addstatement('alignment = <0x0 0x400000>;')
-        self.assertEqual(len(node.attributes), 3)
+        self.assertEqual(len(node.props), 3)
         node.addstatement('linux,phandle = <0x100>;')
-        self.assertEqual(len(node.attributes), 4)
+        self.assertEqual(len(node.props), 4)
         node.addstatement('reg = <0x0 0x90000000 0x0 0x1400000>;')
-        self.assertEqual(len(node.attributes), 5)
-        self.assertEqual(node.attributes['compatible'], '"shared-dma-pool"')
-        self.assertEqual(node.attributes['reusable'], '')
-        self.assertEqual(node.attributes['alignment'], '<0x0 0x400000>')
-        self.assertEqual(node.attributes['linux,phandle'], '<0x100>')
-        self.assertEqual(node.attributes['reg'], '<0x0 0x90000000 0x0 0x1400000>')
-        self.assertEqual(len(node.attributes), 5)
+        self.assertEqual(len(node.props), 5)
+        self.assertEqual(node.props['compatible'], '"shared-dma-pool"')
+        self.assertEqual(node.props['reusable'], '')
+        self.assertEqual(node.props['alignment'], '<0x0 0x400000>')
+        self.assertEqual(node.props['linux,phandle'], '<0x100>')
+        self.assertEqual(node.props['reg'], '<0x0 0x90000000 0x0 0x1400000>')
+        self.assertEqual(len(node.props), 5)
         node.addstatement('compatible = "shared-dma-pool2"')
-        self.assertEqual(node.attributes['compatible'], '"shared-dma-pool2"')
+        self.assertEqual(node.props['compatible'], '"shared-dma-pool2"')
         node.addstatement('compatible = "shared-dma-pool3";\n')
-        self.assertEqual(node.attributes['compatible'], '"shared-dma-pool3"')
+        self.assertEqual(node.props['compatible'], '"shared-dma-pool3"')
         node.addstatement('reusable2')
-        self.assertEqual(node.attributes['reusable2'], '')
+        self.assertEqual(node.props['reusable2'], '')
         node.addstatement('reusable3;\n')
-        self.assertEqual(node.attributes['reusable3'], '')
+        self.assertEqual(node.props['reusable3'], '')
         with self.assertRaises(KeyError):
-            self.assertEqual(node.attributes['reusableaaa'], '')
+            self.assertEqual(node.props['reusableaaa'], '')
 
     def test_isDisabled(self):
         node = dtsparser.Node()
@@ -96,13 +97,13 @@ class NodeTest(unittest.TestCase):
         node.addstatement('reg = <0x0 0x90000000 0x0 0x1400000>;')
         self.assertFalse(node.isDisabled())
         node.addstatement('status = "ok";')
-        self.assertEqual(node.attributes['status'], '"ok"')
+        self.assertEqual(node.props['status'], '"ok"')
         self.assertFalse(node.isDisabled())
         node.addstatement('status = "okay";')
-        self.assertEqual(node.attributes['status'], '"okay"')
+        self.assertEqual(node.props['status'], '"okay"')
         self.assertFalse(node.isDisabled())
         node.addstatement('status = "disabled";')
-        self.assertEqual(node.attributes['status'], '"disabled"')
+        self.assertEqual(node.props['status'], '"disabled"')
         self.assertTrue(node.isDisabled())
 
     def test_addsubnode(self):
@@ -135,7 +136,7 @@ class NodeTest(unittest.TestCase):
         self.assertEqual(node111.subnodes, [])
         self.assertEqual(node21.subnodes, [])
         self.assertEqual(node31.subnodes, [])
-        
+
     def test_dump(self):
         node = dtsparser.Node()
         with self.assertRaises(ValueError):
@@ -159,7 +160,7 @@ class NodeTest(unittest.TestCase):
         node.addstatement('reg = <0x0 0x90000000 0x0 0x1400000>;')
         dumpmsg += '\treg = <0x0 0x90000000 0x0 0x1400000>;\n'
         self.assertEqual(node.dump(), dumpmsg + dumpmsg_tailer)
-        
+
         node = dtsparser.Node()
         node.name = 'name'
         node.addstatement('status = "disabled";')
@@ -185,6 +186,7 @@ class DtsTest(unittest.TestCase):
         self.__qualcomm_dts_file = 'sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts'
         self.__mtk_dts_file = 'mt6771-dtb-k71v1_64_bsp.dts'
         self.__sprd_dts_file = 'sp9863a-1h10-native-dtb-sp9863a-1h10-overlay.dts'
+
     def test_dump(self):
         self.__dtsfiles = []
         for file in os.listdir('.'):
@@ -196,6 +198,14 @@ class DtsTest(unittest.TestCase):
                 filecontents = fd.read()
             filecontents_header =  filecontents[:re.search(re.compile('/ {'), filecontents).span()[0]]
             self.assertEqual(filecontents, filecontents_header+dts.dump())
+
+    def test_get_platform(self):
+        dts = dtsparser.Dts(self.__qualcomm_dts_file)
+        self.assertEqual(dts.get_platform(), dtsparser.Platform.QUALCOMM)
+        dts = dtsparser.Dts(self.__mtk_dts_file)
+        self.assertEqual(dts.get_platform(), dtsparser.Platform.MTK)
+        dts = dtsparser.Dts(self.__sprd_dts_file)
+        self.assertEqual(dts.get_platform(), dtsparser.Platform.SPRD)
 
     def test_find_node_by_patternname(self):
         dts = dtsparser.Dts('sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts')
@@ -226,7 +236,7 @@ class DtsTest(unittest.TestCase):
         for name in names:
             self.assertTrue(name in nodenames)
         self.assertGreater(len(dts.find_node_by_patternname('.*ed.*')), len(nodenames))
-        
+
         nodes = dts.find_node_by_patternname('sdjfksfjsoidnvb')
         self.assertTrue(isinstance(nodes, list))
         self.assertEqual(nodes, [])
@@ -239,7 +249,7 @@ class DtsTest(unittest.TestCase):
         self.assertEqual(node.name, 'qcom,gdsc@0xab00814')
         node = dts.find_node_by_phandle('0x943')
         self.assertEqual(node, None)
-        
+
     def test_find_node_ancestor_with_compatible_prop(self):
         dts = dtsparser.Dts('sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts')
         nodename = ['qcom,gpu-pwrlevel@0', 'vol_up', 'qcom,gpu-mempool@2']
@@ -248,7 +258,7 @@ class DtsTest(unittest.TestCase):
             node = dts.find_node_by_patternname(nodename[i])[0]
             node_ancestor_with_compatible = dts.find_node_ancestor_with_compatible_prop(node)
             self.assertEqual(node_ancestor_with_compatible.name, nodename_ancestor_with_compatible[i])
-        
+
     def test_find_node_statement_by_statementpattern(self):
         dts = dtsparser.Dts('sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts')
         node_statements = dts.find_node_statement_by_statementpattern('phandle = <0x8[01].*')
@@ -286,10 +296,10 @@ class DtsTest(unittest.TestCase):
         mtk_nodenames = ['interrupt-controller@0c000000', 'intpol-controller@0c530620', 'pinctrl@1000b000', 'pmic_irq', 'mt6370_pmu_dts']
         sprd_nodenames = ['gpio-controller@40210000', 'gpio-controller@402100a0', 'gpio-controller@402c0000', 'pmic@0', 'gpio-controller@280',
                      'interrupt-controller@14000000', 'interrupt-controller']
-        
+
         dts_files = [self.__qualcomm_dts_file, self.__mtk_dts_file, self.__sprd_dts_file]
         nodenames = [qualcomm_nodenames, mtk_nodenames, sprd_nodenames]
-        
+
         for i in range(len(dts_files)):        
             dts = dtsparser.Dts(dts_files[i], with_disabled_node=True)
             node_phandle = dts.get_interrup_controller_node_phandle()
@@ -297,35 +307,35 @@ class DtsTest(unittest.TestCase):
             self.assertEqual(len(node_phandle), len(nodenames[i]))
             without_disabled_prop_nodenum = 0
             for node in node_phandle:
-                self.assertEqual('<'+node_phandle[node]+'>', node.attributes['phandle'])
+                self.assertEqual('<'+node_phandle[node]+'>', node.props['phandle'])
                 self.assertTrue(node.name in nodenames[i])
                 if not node.isDisabled():
                     without_disabled_prop_nodenum += 1
-    
+
             dts = dtsparser.Dts(dts_files[i])
             node_phandle = dts.get_interrup_controller_node_phandle()
             self.assertTrue(isinstance(node_phandle, dict))
             self.assertLessEqual(len(node_phandle), without_disabled_prop_nodenum)
             for node in node_phandle:
-                self.assertEqual('<'+node_phandle[node]+'>', node.attributes['phandle'])
+                self.assertEqual('<'+node_phandle[node]+'>', node.props['phandle'])
                 self.assertTrue(node.name in nodenames[i])
                 self.assertFalse(node.isDisabled())
 
-    @unittest.skip('check output')
+    #@unittest.skip('check output')
     def test_get_gpiocontroller_node_phandle(self):
         qualcomm_nodenames = ['pinctrl@c000', 'pinctrl@c000', 'pinctrl@c000', 'wcd_pinctrl@5', 'wcd_pinctrl', 'pinctrl@03000000']
         mtk_nodenames = ['pinctrl@1000b000']
         sprd_nodenames = ['gpio-controller@40210000',  'gpio-controller@402100a0', 'gpio-controller@402c0000', 'gpio-controller@280']
         dts_files = [self.__qualcomm_dts_file, self.__mtk_dts_file, self.__sprd_dts_file]
         nodenames = [qualcomm_nodenames, mtk_nodenames, sprd_nodenames]
-        
+
         for i in range(len(dts_files)):
             dts = dtsparser.Dts(dts_files[i], with_disabled_node=True)
             node_phandle = dts.get_gpiocontroller_node_phandle()
             self.assertTrue(isinstance(node_phandle, dict))
             without_disabled_prop_nodenum = 0
             for node in node_phandle:
-                self.assertEqual(''.join(['<', node_phandle[node], '>']), node.attributes['phandle'])
+                self.assertEqual(''.join(['<', node_phandle[node], '>']), node.props['phandle'])
                 self.assertTrue(node.name in nodenames[i])
                 if not node.isDisabled():
                     without_disabled_prop_nodenum += 1
@@ -336,17 +346,19 @@ class DtsTest(unittest.TestCase):
             self.assertLessEqual(len(node_phandle), without_disabled_prop_nodenum)
             for node in node_phandle:
                 self.assertFalse(node.isDisabled())
-                self.assertEqual(''.join(['<', node_phandle[node], '>']), node.attributes['phandle'])
+                self.assertEqual(''.join(['<', node_phandle[node], '>']), node.props['phandle'])
                 self.assertTrue(node.name in nodenames[i])
 
     def test_get_pinctrlnode(self):
         dts_files = [self.__qualcomm_dts_file, self.__mtk_dts_file, self.__sprd_dts_file]
         for file in dts_files:
             dts = dtsparser.Dts(file)
-            with self.assertRaises(RuntimeError):
-                dts.dump_gpio_interrupt_pinctrl_usage()
+            nodes = dts.get_pinctrlnode()
+            for node in nodes:
+                msg = node.dump()
+                print(msg)
 
-    @unittest.skip('check output')
+    #@unittest.skip('check output')
     def test_get_used_pinctrl_phandle_node(self):
         qualcomm_handles = ['0x19c', '0x19d', '0x19e', '0x19f', '0x1a2', '0x1a3', '0x216', '0x23d',
                    '0x23e', '0x240', '0x241', '0x242', '0x243', '0x244', '0x245', '0x246',
@@ -411,25 +423,33 @@ class DtsTest(unittest.TestCase):
                     self.assertTrue(dts.find_node_statement_by_statementpattern('pinctrl-[0-9].*{}.*'.format(phandle)))
             self.assertLessEqual(node_num, without_disabled_prop_nodenum)
 
-    @unittest.skip('check output')
+    #@unittest.skip('check output')
     def test_dump_gpio_interrupt_pinctrl_usage(self):
         dts_files = [self.__qualcomm_dts_file, self.__mtk_dts_file, self.__sprd_dts_file]
         for file in dts_files:
             dts = dtsparser.Dts(file)
-            with self.assertRaises(RuntimeError):
-                dts.dump_gpio_interrupt_pinctrl_usage()
+            msg = dts.dump_gpio_interrupt_pinctrl_usage()
+            print(msg)
 
+    #@unittest.skip('check output')
     def test_get_pinctrl_gpio_node_info(self):
-        dts = dtsparser.Dts('sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts')
-        pinctrl_nodes = dts.get_pinctrlnode()
-        for node in pinctrl_nodes:
-            with self.assertRaises(RuntimeError):
-                dts.get_pinctrl_gpio_node_info(node)
-        with self.assertRaises(ValueError):
-            dts.get_pinctrl_gpio_node_info(None)
-            dts.get_pinctrl_gpio_node_info('node')
-        
-    @unittest.skip('check output')
+        dts_files = [self.__qualcomm_dts_file, self.__mtk_dts_file, self.__sprd_dts_file]
+        #dts_files = [self.__qualcomm_dts_file]
+        #dts_files = [self.__mtk_dts_file]
+        #dts_files = [self.__sprd_dts_file]
+        for file in dts_files:
+            dts = dtsparser.Dts(file)
+            with self.assertRaises(ValueError):
+                dts.get_pinctrl_gpio_node_info(None)
+                dts.get_pinctrl_gpio_node_info('node')
+            pinctrl_nodes = dts.get_pinctrlnode()
+            for node in pinctrl_nodes:
+                pinctrl_gpio_node_info = dts.get_pinctrl_gpio_node_info(node)
+                for gpio in pinctrl_gpio_node_info:
+                    for node1, node2 in pinctrl_gpio_node_info[gpio]:
+                        print('{}: {}->{}'.format(gpio, node1.name, node2.name))
+
+    #@unittest.skip('check output')
     def test_gpio_nodename_property_used(self):
         dts_files = [self.__qualcomm_dts_file, self.__mtk_dts_file, self.__sprd_dts_file]
         #dts_files = [self.__qualcomm_dts_file]
@@ -445,7 +465,7 @@ class DtsTest(unittest.TestCase):
                     for node, prop in gpio_nodename_property[gpio]:
                         print('{}: {}->{}'.format(gpio, node.name, prop))
 
-    @unittest.skip('check output')
+    #@unittest.skip('check output')
     def test_interruptgpio_nodename_used(self):
         dts_files = [self.__qualcomm_dts_file, self.__mtk_dts_file, self.__sprd_dts_file]
         #dts_files = [self.__qualcomm_dts_file]
@@ -456,8 +476,8 @@ class DtsTest(unittest.TestCase):
             interrruptcontroller_nodes = dts.get_interrup_controller_node_phandle()
             self.assertTrue(isinstance(interrruptcontroller_nodes, dict))
             for node in interrruptcontroller_nodes:
-                if 'compatible' in node.attributes:
-                    print('{} {{\n\t\'compatible\' ={};\n}}\n'.format(node.name, node.attributes['compatible']))
+                if 'compatible' in node.props:
+                    print('{} {{\n\t\'compatible\' ={};\n}}\n'.format(node.name, node.props['compatible']))
                 else:
                     print('{} {{\\n}}\n'.format(node.name))
                 interrupts_node = dts.interruptgpio_nodename_used(node)
@@ -465,61 +485,10 @@ class DtsTest(unittest.TestCase):
                     print('{}: {}'.format(interrupt, interrupts_node[interrupt]))
 
 
-class DtsInfoQualcommTest(unittest.TestCase):
-    def setUp(self):
-        self.__dts = dtsparser.DtsInfoQualcomm('sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts')
-    @unittest.skip('check output')
-    def test_get_pinctrl_gpio_node_info(self): # test simply, change it later
-        pinctrl_nodes = self.__dts.get_pinctrlnode()
-        for node in pinctrl_nodes:
-            pinctrl_gpio_node_info = self.__dts.get_pinctrl_gpio_node_info(node)
-            for gpio in pinctrl_gpio_node_info:
-                for node1, node2 in pinctrl_gpio_node_info[gpio]:
-                    print('{}: {}->{}'.format(gpio, node1.name, node2.name))
-
-    @unittest.skip('check output')
-    def test_dump_gpio_interrupt_pinctrl_usage(self):
-        result = self.__dts.dump_gpio_interrupt_pinctrl_usage()
-        print(result)
-
-class DtsInfoMtkTest(unittest.TestCase): # test simply, change it later
-    def setUp(self):
-        self.__dts = dtsparser.DtsInfoQualcomm('mt6771-dtb-k71v1_64_bsp.dts')
-    @unittest.skip('check output')
-    def test_get_pinctrl_gpio_node_info(self):
-        pinctrl_nodes = self.__dts.get_pinctrlnode()
-        for node in pinctrl_nodes:
-            pinctrl_gpio_node_info = self.__dts.get_pinctrl_gpio_node_info(node)
-            for gpio in pinctrl_gpio_node_info:
-                for node1, node2 in pinctrl_gpio_node_info[gpio]:
-                    print('{}: {}->{}'.format(gpio, node1.name, node2.name))
-
-    @unittest.skip('check output')
-    def test_dump_gpio_interrupt_pinctrl_usage(self):
-        result = self.__dts.dump_gpio_interrupt_pinctrl_usage()
-        print(result)
-
-class DtsInfoSprdTest(unittest.TestCase):
-    def setUp(self):
-        self.__dts = dtsparser.DtsInfoQualcomm('sp9863a-1h10-native-dtb-sp9863a-1h10-overlay.dts')
-    @unittest.skip('check output')
-    def test_get_pinctrl_gpio_node_info(self): # test simply, change it later
-        pinctrl_nodes = self.__dts.get_pinctrlnode()
-        for node in pinctrl_nodes:
-            pinctrl_gpio_node_info = self.__dts.get_pinctrl_gpio_node_info(node)
-            for gpio in pinctrl_gpio_node_info:
-                for node1, node2 in pinctrl_gpio_node_info[gpio]:
-                    print('{}: {}->{}'.format(gpio, node1.name, node2.name))
-
-    @unittest.skip('check output')
-    def test_dump_gpio_interrupt_pinctrl_usage(self):
-        result = self.__dts.dump_gpio_interrupt_pinctrl_usage()
-        print(result)
-
-@unittest.skip('check output')
+#@unittest.skip('check output')
 class dtsparserTest(unittest.TestCase):
     def test_dtsparser(self):
-        os.system('./dtsparser.py -f sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts -p qualcomm')
+        os.system('./dtsparser.py -f sm8150-dtb-sm8150-sdx50m-mtp-overlay.dts')
 
 
 if __name__ == '__main__':

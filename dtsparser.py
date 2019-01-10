@@ -6,23 +6,29 @@
 #    ./out/target/product/msm8937_64/obj/KERNEL_OBJ/arch/arm64/boot/dts/qcom/zte-msm8940-pmi8940-vita.dtb
 #
 
-__version__ = "1.1.0"
-
 from argparse import ArgumentParser
 import re
 import os
 import tempfile
 import sys
+import enum
+
+__version__ = "1.1.1"
+
+class Platform(enum.Enum):
+    QUALCOMM = 1
+    MTK = 2
+    SPRD = 3
 
 
 class Node():
     def __init__(self):
-        self.__attributeslist = []  # reg = <0x2>; saved as ['reg', '<0x2>']
-        self.__attributesmap = None  # reg = <0x2>; saved as {'reg': '<0x2>'}
+        self.__propslist = []  # reg = <0x2>; saved as ['reg', '<0x2>']
+        self.__propsmap = None  # reg = <0x2>; saved as {'reg': '<0x2>'}
         self.__name = None
         self.__subnodes = []
         self.__parent = None
-        self.__attributeschanged = 1
+        self.__propschanged = 1
 
     def addstatement(self, statement):
         """
@@ -32,10 +38,10 @@ class Node():
         if statement:
             try:
                 i = statement.index('=')
-                self.__attributeslist.append([statement[0:i].strip(), statement[i+1:].strip()])
+                self.__propslist.append([statement[0:i].strip(), statement[i+1:].strip()])
             except:
-                self.__attributeslist.append([statement.strip(), ''])
-        self.__attributeschanged = 1
+                self.__propslist.append([statement.strip(), ''])
+        self.__propschanged = 1
 
     @property
     def name(self):
@@ -67,7 +73,7 @@ class Node():
         if node == self:
             raise ValueError('node parent is set to itself, set parent to None if it has no parent')
         self.__parent = node
-        
+
     def addsubnode(self, node):
         if not isinstance(node, Node):
             raise ValueError('node must be instance of Node')
@@ -79,11 +85,11 @@ class Node():
         return self.__subnodes
 
     @property
-    def attributes(self):
-        if self.__attributeschanged:
-            self.__attributesmap = dict(self.__attributeslist)
-            self.__attributeschanged = 0
-        return self.__attributesmap
+    def props(self):
+        if self.__propschanged:
+            self.__propsmap = dict(self.__propslist)
+            self.__propschanged = 0
+        return self.__propsmap
 
     def dump(self, deepth=0, withdisabled = False):
         """
@@ -96,11 +102,11 @@ class Node():
             return ''.join(result)
         indent_string = '\t' * deepth
         result.append(''.join([indent_string, self.name, ' {\n']))
-        for attribute, value in self.__attributeslist:
+        for prop, value in self.__propslist:
             if value:
-                result.append(''.join([indent_string, '\t', attribute, ' = ', value, ';\n']))
+                result.append(''.join([indent_string, '\t', prop, ' = ', value, ';\n']))
             else:
-                result.append(''.join([indent_string, '\t', attribute, ';\n']))
+                result.append(''.join([indent_string, '\t', prop, ';\n']))
         for node in self.__subnodes:
             result.append('\n')
             result.append(node.dump(deepth + 1, withdisabled=withdisabled))
@@ -108,7 +114,7 @@ class Node():
         return ''.join(result)
 
     def isDisabled(self):
-        if 'status' in self.attributes.keys() and self.attributes['status'] == '"disabled"':
+        if 'status' in self.props.keys() and self.props['status'] == '"disabled"':
             return True
         return False
 
@@ -117,15 +123,25 @@ class Dts():
     def __init__(self, filename, with_disabled_node=False):
         self.__with_disabled_node = with_disabled_node
         self.__rootnode = self.__dts_parser(filename)
+        self.__platform = self.get_platform()
 
     def dump(self):
         return self.__rootnode.dump(withdisabled=True)
-    
+
     def find_node_by_patternname(self, pattern):
         """
             return list of subnode which name fully matches pattern
         """
         return self.find_subnode_by_patternname_recursive(self.__rootnode, pattern)
+
+    def get_platform(self):
+        compatible_value = self.__rootnode.props['compatible']
+        if re.search(re.compile('(sprd)|(Spreadtrum)', re.IGNORECASE), compatible_value):
+            return Platform.SPRD
+        elif re.search(re.compile('(mediatek)|(mtk)',re.IGNORECASE), compatible_value):
+            return Platform.MTK
+        elif re.search(re.compile('qcom', re.IGNORECASE), compatible_value):
+            return Platform.QUALCOMM
 
     def find_node_by_phandle(self, phandle):
         node_statement = self.find_node_statement_by_statementpattern('phandle = <{}>'.format(phandle))
@@ -134,22 +150,22 @@ class Dts():
         else:
             print('node with phandle = <{}> is not found, please check'.format(phandle))
             return None
-        
+
     def find_node_ancestor_with_compatible_prop(self, node):
         """
             reurn node or its ancestor node which with compatible property
         """
         if not isinstance(node, Node):
             raise ValueError('node must be a Node')
-        if 'compatible' in node.attributes.keys():
+        if 'compatible' in node.props.keys():
             return node
         ret = node.parent
         while ret:
-            if 'compatible' in ret.attributes.keys():
+            if 'compatible' in ret.props.keys():
                 return ret
             ret = ret.parent
         return ret
-        
+
     def find_node_statement_by_statementpattern(self, pattern):
         """
             Return: {node: {prop1:value1, prop2:value2}, ....]
@@ -165,8 +181,8 @@ class Dts():
         ret = dict()
         nodes_statement = self.find_node_statement_by_statementpattern('interrupt-controller')
         for node in nodes_statement:
-            if 'phandle' in node.attributes:
-                phandle = node.attributes['phandle']
+            if 'phandle' in node.props:
+                phandle = node.props['phandle']
                 phandle = phandle[phandle.index('<')+1:phandle.index('>')]
                 ret[node] = phandle
         return ret
@@ -179,8 +195,8 @@ class Dts():
         ret = dict()
         nodes_statement = self.find_node_statement_by_statementpattern('gpio-controller')
         for node in nodes_statement:
-            if 'phandle' in node.attributes:
-                phandle = node.attributes['phandle']
+            if 'phandle' in node.props:
+                phandle = node.props['phandle']
                 phandle = phandle[phandle.index('<')+1:phandle.index('>')]
                 ret[node] = phandle
         return ret
@@ -215,9 +231,60 @@ class Dts():
         return ret
 
     def get_pinctrl_gpio_node_info(self, pinctrlnode):
+        """
+            return dict  {gpio1: [node1.name->pinctrlnodename, ...], gpio2: [node2.name->pinctrlnodename ...], ...}
+        """
         if not isinstance(pinctrlnode, Node):
             raise ValueError('pinctrlnode must be a node')
-        raise RuntimeError('call get_pinctrl_gpio_node_info in DerivedClass based on platform')
+        ret = dict()
+        phandles_node = self.get_used_pinctrl_phandle_node()
+        for phandle in phandles_node:
+            node = self.find_node_by_phandle(phandle)
+            if not node:
+                continue
+            node = self.find_node_ancestor_with_compatible_prop(node)
+            if node != pinctrlnode:
+                continue
+            for node_use_pinctrl in phandles_node[phandle]:
+                subpinctrlnode = self.find_node_by_phandle(phandle)
+                if not subpinctrlnode:
+                    continue
+                if self.__platform == Platform.QUALCOMM:
+                    node_statement = self.find_node_statement_by_statementpattern_recursive(subpinctrlnode, 'pins = .*gpio[0-9].*')
+                    for node in node_statement.keys():
+                        pins = node_statement[node]
+                        for prop in pins.keys():
+                            value = pins[prop]
+                            gpio_property = re.findall(re.compile('[0-9]+'), value)
+                            for value in gpio_property:                        
+                                num = int(value)
+                                if not num in ret.keys():
+                                    ret[num] = []
+                                ret[num].append((node_use_pinctrl, subpinctrlnode))
+                elif self.__platform == Platform.MTK:
+                    node_statement = self.find_node_statement_by_statementpattern_recursive(subpinctrlnode, 'pins\s+=\s+<\s*0x[0-9a-fA-F]+\s*>')
+                    for node in node_statement.keys():
+                        pins = node_statement[node]
+                        for prop in pins.keys():
+                            value = pins[prop]
+                            value = int(value[value.index('<')+1:value.index('>')], 16)
+                            num = (value & 0xFF00) >> 8
+                            if not num in ret.keys():
+                                ret[num] = []
+                            ret[num].append((node_use_pinctrl, subpinctrlnode))
+                elif self.__platform == Platform.SPRD:
+                    node_statement = self.find_node_statement_by_statementpattern_recursive(subpinctrlnode, 'pins = <(\s*0x[0-9a-fA-F]+\s*)+>')
+                    for node in node_statement.keys():
+                        pins = node_statement[node]
+                        for prop in pins.keys():
+                            value = pins[prop]
+                            gpio_property = re.findall(re.compile('0x[0-9a-fA-F]+'), value)
+                            for value in [int(gpio_property[i], 16) for i in range(0, len(gpio_property), 2)]:
+                                num = (value >>20) & 0xFFF
+                                if not num in ret.keys():
+                                    ret[num] = []
+                                ret[num].append((node_use_pinctrl, subpinctrlnode))
+        return ret       
 
     def gpio_nodename_property_used(self, gpiocontroller_node):
         """
@@ -236,12 +303,12 @@ class Dts():
         Return: {gpio:{nodename1, nodename2, ...}, ...}
         """
         ret = dict()
-        interruptcontroller_phandle = re.search(re.compile('0x[0-9a-fA-F]+'), interruptcontroller_node.attributes['phandle']).group(0)
+        interruptcontroller_phandle = re.search(re.compile('0x[0-9a-fA-F]+'), interruptcontroller_node.props['phandle']).group(0)
         interrupts_node = self.find_node_statement_by_statementpattern(re.compile('interrupt-parent = <0x[0-9a-fA-F]+>')).keys()
         for node in interrupts_node:
-            if re.search(re.compile('0x[0-9a-fA-F]+'), node.attributes['interrupt-parent']).group(0) == interruptcontroller_phandle:
-                if 'interrupts' in node.attributes.keys():
-                    interrupts_property = re.findall(re.compile('0x[0-9a-fA-F]+'), node.attributes['interrupts'])
+            if re.search(re.compile('0x[0-9a-fA-F]+'), node.props['interrupt-parent']).group(0) == interruptcontroller_phandle:
+                if 'interrupts' in node.props.keys():
+                    interrupts_property = re.findall(re.compile('0x[0-9a-fA-F]+'), node.props['interrupts'])
                     gpios = [int(interrupts_property[i], 16) for i in range(0, len(interrupts_property), 2)]
                     for gpio in gpios:
                         if not gpio in ret.keys():
@@ -253,7 +320,7 @@ class Dts():
         interrupt_nodes_phandle = self.get_interrup_controller_node_phandle()
         gpiocontroller_nodes_phandle = self.get_gpiocontroller_node_phandle()
         pinctrlnodes = self.get_pinctrlnode()
-        
+
         nodes = set()
         for node in interrupt_nodes_phandle:
             nodes.add(node)
@@ -264,7 +331,7 @@ class Dts():
         first = True
         msg_list = []
         for node in nodes:
-            if 'compatible' in node.attributes.keys():
+            if 'compatible' in node.props.keys():
                 if node in gpiocontroller_nodes_phandle:
                     gpio_nodeinfo = self.gpio_nodename_property_used(node)
                 else:
@@ -287,7 +354,7 @@ class Dts():
                     msg_list.append('-------------------------------------------------------------------------\n')
                 else:
                     first = False
-                msg_list.append('{} {{\n\t\'compatible\' = {};\n}}\n'.format(node.name, node.attributes['compatible']))
+                msg_list.append('{} {{\n\t\'compatible\' = {};\n}}\n'.format(node.name, node.props['compatible']))
                 for num in nums:
                     msg_list.append('{}:\n'.format(num))
                     try:
@@ -335,8 +402,8 @@ class Dts():
         if not isinstance(node, Node):
             raise ValueError('phandle must be a Node')
 
-        if 'phandle' in node.attributes.keys() \
-            and re.search(re.compile('0x[0-9a-fA-F]+'), node.attributes['phandle']).group(0) == phandle:
+        if 'phandle' in node.props.keys() \
+            and re.search(re.compile('0x[0-9a-fA-F]+'), node.props['phandle']).group(0) == phandle:
                 return node
         for subnode in node.subnodes:
             ret = self.find_node_by_phandle_recursive(subnode, phandle)
@@ -367,20 +434,20 @@ class Dts():
         if not isinstance(node, Node):
             raise ValueError('node must be a Node')
         ret = dict()
-        
-        for key in node.attributes.keys():
-            if node.attributes[key]:
-                if re.fullmatch(pattern, key + ' = ' + node.attributes[key]):
+
+        for prop in node.props.keys():
+            if node.props[prop]:
+                if re.fullmatch(pattern, prop + ' = ' + node.props[prop]):
                     if node in ret.keys():
-                        ret[node].update({key: node.attributes[key]})
+                        ret[node].update({prop: node.props[prop]})
                     else:
-                        ret[node] = {key: node.attributes[key]}
+                        ret[node] = {prop: node.props[prop]}
             else:
-                if re.fullmatch(pattern, key):
+                if re.fullmatch(pattern, prop):
                     if node in ret.keys():
-                        ret[node].update({key: ''})
+                        ret[node].update({prop: ''})
                     else:
-                        ret[node] = {key: ''}
+                        ret[node] = {prop: ''}
         for subnode in node.subnodes:
             ret.update(self.find_node_statement_by_statementpattern_recursive(subnode, pattern))
         return ret
@@ -390,16 +457,16 @@ class Dts():
             Return all gpio used of node and its subnode, [(node1, property, gpio), ...]
         """
         ret = []
-        if 'phandle' in gpiocontroller_node.attributes.keys():
-            phandle = re.search(re.compile('0x[0-9a-fA-F]+'), gpiocontroller_node.attributes['phandle']).group(0)
+        if 'phandle' in gpiocontroller_node.props.keys():
+            phandle = re.search(re.compile('0x[0-9a-fA-F]+'), gpiocontroller_node.props['phandle']).group(0)
             if not phandle:
                 return ret
             pattern_string = re.compile('<(\s*' + phandle + '\s+0x[0-9a-fA-F]+\s+0x[0-9a-fA-F]+\s*)+>')
-            for attr in node.attributes:
-                if re.fullmatch(pattern_string, node.attributes[attr]):
-                    gpio_property = re.findall(re.compile('0x[0-9a-fA-F]+'), node.attributes[attr])
+            for prop in node.props:
+                if re.fullmatch(pattern_string, node.props[prop]):
+                    gpio_property = re.findall(re.compile('0x[0-9a-fA-F]+'), node.props[prop])
                     for gpio in [int(gpio_property[i], 16) for i in range(1, len(gpio_property), 3)]:
-                        ret.append((node, attr, gpio))
+                        ret.append((node, prop, gpio))
             for subnode in node.subnodes:
                 for item in self.get_node_property_gpio_use_recursive(subnode, gpiocontroller_node):
                     ret.append(item)
@@ -411,17 +478,17 @@ class Dts():
     def __node_parser(self, fd, node_name=None):
         """
         Parse node infomation, without nodename and starting '{' but with ending '};'
-    
+
         nodenmae {
         ----------------------------------
-            attribute1;
+            prop1;
             subnode {
             };
             subnode {
             };
         };
         -----------------------------------
-    
+
         Return node
         """
         node = Node()
@@ -456,104 +523,6 @@ class Dts():
                     break
                 line = fd.readline()
         return root
-
-
-class DtsInfoQualcomm(Dts):
-    def get_pinctrl_gpio_node_info(self, pinctrlnode):
-        """
-            return dict  {gpio1: [node1.name->pinctrlnodename, ...], gpio2: [node2.name->pinctrlnodename ...], ...}
-        """
-        """
-            return dict  {gpio1: [node1.name->pinctrlnodename, ...], gpio2: [node2.name->pinctrlnodename ...], ...}
-        """
-        ret = dict()
-        phandles_node = self.get_used_pinctrl_phandle_node()
-        for phandle in phandles_node:
-            node = self.find_node_by_phandle(phandle)
-            if not node:
-                continue
-            node = self.find_node_ancestor_with_compatible_prop(node)
-            if node != pinctrlnode:
-                continue
-            for node_use_pinctrl in phandles_node[phandle]:
-                subpinctrlnode = self.find_node_by_phandle(phandle)
-                if not subpinctrlnode:
-                    continue
-                node_statement = self.find_node_statement_by_statementpattern_recursive(subpinctrlnode, 'pins = .*gpio[0-9].*')
-                for node in node_statement.keys():
-                    pins = node_statement[node]
-                    for prop in pins.keys():
-                        value = pins[prop]
-                        gpio_property = re.findall(re.compile('[0-9]+'), value)
-                        for value in gpio_property:                        
-                            num = int(value)
-                            if not num in ret.keys():
-                                ret[num] = []
-                            ret[num].append((node_use_pinctrl, subpinctrlnode))
-        return ret       
-
-
-class DtsInfoMtk(Dts):
-    def get_pinctrl_gpio_node_info(self, pinctrlnode):
-        """
-            return dict  {gpio1: [(node_use_pinctrl, pinctrlnode), ...], gpio2: [(node_use_pinctrl, pinctrlnode) ...], ...}
-        """
-        ret = dict()
-        phandles_node = self.get_used_pinctrl_phandle_node()
-        for phandle in phandles_node:
-            node = self.find_node_by_phandle(phandle)
-            if not node:
-                continue
-            node = self.find_node_ancestor_with_compatible_prop(node)
-            if node != pinctrlnode:
-                continue
-            for node_use_pinctrl in phandles_node[phandle]:
-                subpinctrlnode = self.find_node_by_phandle(phandle)
-                if not subpinctrlnode: # in mtk test dts files, pinctrl 0xd5 is not found
-                    continue
-                node_statement = self.find_node_statement_by_statementpattern_recursive(subpinctrlnode, 'pins\s+=\s+<\s*0x[0-9a-fA-F]+\s*>')
-                for node in node_statement.keys():
-                    pins = node_statement[node]
-                    for prop in pins.keys():
-                        value = pins[prop]
-                        value = int(value[value.index('<')+1:value.index('>')], 16)
-                        num = (value & 0xFF00) >> 8
-                        if not num in ret.keys():
-                            ret[num] = []
-                        ret[num].append((node_use_pinctrl, subpinctrlnode))
-        return ret                        
-
-
-class DtsInfoSprd(Dts):
-    def get_pinctrl_gpio_node_info(self, pinctrlnode):
-        """
-            return dict  {gpio1: [node1.name->pinctrlnodename, ...], gpio2: [node2.name->pinctrlnodename ...], ...}
-        """
-        ret = dict()
-        phandles_node = self.get_used_pinctrl_phandle_node()
-        for phandle in phandles_node:
-            node = self.find_node_by_phandle(phandle)
-            if not node:
-                continue
-            node = self.find_node_ancestor_with_compatible_prop(node)
-            if node != pinctrlnode:
-                continue
-            for node_use_pinctrl in phandles_node[phandle]:
-                subpinctrlnode = self.find_node_by_phandle(phandle)
-                if not subpinctrlnode:
-                    continue
-                node_statement = self.find_node_statement_by_statementpattern_recursive(subpinctrlnode, 'pins = <(\s*0x[0-9a-fA-F]+\s*)+>')
-                for node in node_statement.keys():
-                    pins = node_statement[node]
-                    for prop in pins.keys():
-                        value = pins[prop]
-                        gpio_property = re.findall(re.compile('0x[0-9a-fA-F]+'), value)
-                        for value in [int(gpio_property[i], 16) for i in range(0, len(gpio_property), 2)]:
-                            num = (value >>20) & 0xFFF
-                            if not num in ret.keys():
-                                ret[num] = []
-                            ret[num].append((node_use_pinctrl, subpinctrlnode))
-        return ret       
 
 
 def search_dtc_dtbs():
@@ -597,26 +566,14 @@ def search_dtc_dtbs():
 
     return (dtc_command, dtbs)
 
+
 if __name__ == "__main__":
     parser = ArgumentParser(description="Parse gpio configuration in compiled dtb file")
-    parser.add_argument("-p", metavar='platform ', nargs=1, type=str, required=False, help="Set platform, qualcomm | mtk | sprd")
     parser.add_argument("-f", metavar='compiled_dtsfile', nargs=1, type=str, required=False, help="Set dts file, which is processed by dtc command")
     command = parser.parse_args()
 
-    if not command.p:
-        raise ValueError('platform is not set')
-    elif not command.p[0] in ['qualcomm', 'mtk', 'sprd']:
-        raise ValueError('platform must be qualcomm | mtk | sprd')
-
-    platform = command.p[0]
-
     if command.f:
-        if platform == 'qualcomm':
-            dts = DtsInfoQualcomm(command.f[0])
-        elif platform == 'mtk':
-            dts = DtsInfoMtk(command.f[0])
-        elif platform == 'sprd':
-            dts = DtsInfoSprd(command.f[0])
+        dts = Dts(command.f[0])
         msg = dts.dump_gpio_interrupt_pinctrl_usage()
         print(msg)
         exit()
@@ -628,12 +585,7 @@ if __name__ == "__main__":
             dtsfile = tempfile.mkstemp(suffix='dtstmpfile')
             with open(dtsfile[1], 'w') as tfd:
                 tfd.write(fd.read())
-        if platform == 'qualcomm':
-            dts = DtsInfoQualcomm(dtsfile[1])
-        elif platform == 'mtk':
-            dts = DtsInfoMtk(dtsfile[1])
-        elif platform == 'sprd':
-            dts = DtsInfoSprd(dtsfile[1])
+        dts = Dts(dtsfile[1])
         os.unlink(dtsfile[1])
         result_file = re.sub(re.compile('\.dtb'), '_gpio_use.txt', dtb_file)
         with open(result_file, 'w') as fd:
